@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Plus, Filter, X, LogOut, User, Shield, Edit, FileEdit, Heart } from 'lucide-react';
+import { MapPin, Plus, Filter, X, LogOut, User, Shield, Edit, FileEdit, Heart, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 export default function ParaglidingSitesApp() {
@@ -7,6 +7,7 @@ export default function ParaglidingSitesApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [sites, setSites] = useState([]);
   const [favorites, setFavorites] = useState([]);
+  const [expandedSites, setExpandedSites] = useState([]);
   const [pendingSites, setPendingSites] = useState([]);
   const [editRequests, setEditRequests] = useState([]);
   const [filterCountry, setFilterCountry] = useState('');
@@ -123,7 +124,9 @@ export default function ParaglidingSitesApp() {
     }
   };
 
-  const toggleFavorite = async (siteId) => {
+  const toggleFavorite = async (e, siteId) => {
+    e.stopPropagation(); // Prevent card from expanding when clicking heart
+    
     if (!user) {
       alert('Please log in to favorite sites');
       setShowAuthModal(true);
@@ -154,6 +157,14 @@ export default function ParaglidingSitesApp() {
       console.error('Error toggling favorite:', error);
       alert('Error updating favorites');
     }
+  };
+
+  const toggleExpanded = (siteId) => {
+    setExpandedSites(prev => 
+      prev.includes(siteId) 
+        ? prev.filter(id => id !== siteId)
+        : [...prev, siteId]
+    );
   };
 
   const loadPendingSites = async () => {
@@ -400,7 +411,8 @@ export default function ParaglidingSitesApp() {
         .from('sites')
         .delete()
         .eq('id', siteId);
-        if (error) throw error;
+      
+      if (error) throw error;
       
       setPendingSites(prev => prev.filter(s => s.id !== siteId));
       alert('Site rejected and deleted.');
@@ -429,12 +441,14 @@ export default function ParaglidingSitesApp() {
     }
   };
 
-  const handleEditClick = (site) => {
+  const handleEditClick = (e, site) => {
+    e.stopPropagation();
     setEditingSite(site);
     setShowEditModal(true);
   };
 
-  const handleRequestEditClick = (site) => {
+  const handleRequestEditClick = (e, site) => {
+    e.stopPropagation();
     setRequestingEditSite(site);
     setShowEditRequestModal(true);
   };
@@ -578,58 +592,88 @@ export default function ParaglidingSitesApp() {
         {loading ? (
           <div className="text-center py-12 text-gray-500">Loading sites...</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredSites.map(site => (
-              <div key={site.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-xl font-semibold text-gray-800 flex-1">{site.name}</h3>
-                  <button
-                    onClick={() => toggleFavorite(site.id)}
-                    className={`ml-2 ${
-                      favorites.includes(site.id) 
-                        ? 'text-red-500' 
-                        : 'text-gray-400 hover:text-red-500'
-                    } transition-colors`}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+            {filteredSites.map(site => {
+              const isExpanded = expandedSites.includes(site.id);
+              return (
+                <div 
+                  key={site.id} 
+                  className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow"
+                >
+                  {/* Collapsed View - Always Visible */}
+                  <div 
+                    onClick={() => toggleExpanded(site.id)}
+                    className="p-6 cursor-pointer"
                   >
-                    <Heart className={`w-5 h-5 ${favorites.includes(site.id) ? 'fill-current' : ''}`} />
-                  </button>
-                </div>
-                <div className="text-sm text-gray-600 mb-3">
-                  {site.country && <p><strong>Country:</strong> {site.country}</p>}
-                  {site.state && <p><strong>State:</strong> {site.state}</p>}
-                </div>
-                {site.info && (
-                  <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded max-h-32 overflow-y-auto mb-3">
-                    {site.info}
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-semibold text-gray-800 mb-2">{site.name}</h3>
+                        {(site.country || site.state) && (
+                          <p className="text-sm text-gray-600">
+                            {[site.state, site.country].filter(Boolean).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 ml-2">
+                        <button
+                          onClick={(e) => toggleFavorite(e, site.id)}
+                          className={`${
+                            favorites.includes(site.id) 
+                              ? 'text-red-500' 
+                              : 'text-gray-400 hover:text-red-500'
+                          } transition-colors`}
+                        >
+                          <Heart className={`w-5 h-5 ${favorites.includes(site.id) ? 'fill-current' : ''}`} />
+                        </button>
+                        {(site.info || isAdmin || user) && (
+                          isExpanded ? (
+                            <ChevronUp className="w-5 h-5 text-gray-400" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                          )
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
-                {isAdmin ? (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEditClick(site)}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-                    >
-                      <Edit className="w-4 h-4" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteSite(site.id)}
-                      className="flex-1 px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ) : user && (
-                  <button
-                    onClick={() => handleRequestEditClick(site)}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700"
-                  >
-                    <FileEdit className="w-4 h-4" />
-                    Request Edit
-                  </button>
-                )}
-              </div>
-            ))}
+
+                  {/* Expanded View - Shows when clicked */}
+                  {isExpanded && (
+                    <div className="px-6 pb-6 border-t border-gray-200 pt-4">
+                      {site.info && (
+                        <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded mb-3 max-h-48 overflow-y-auto">
+                          {site.info}
+                        </div>
+                      )}
+                      {isAdmin ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={(e) => handleEditClick(e, site)}
+                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                          >
+                            <Edit className="w-4 h-4" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteSite(site.id); }}
+                            className="flex-1 px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ) : user && (
+                        <button
+                          onClick={(e) => handleRequestEditClick(e, site)}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700"
+                        >
+                          <FileEdit className="w-4 h-4" />
+                          Request Edit
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -686,7 +730,6 @@ export default function ParaglidingSitesApp() {
     </div>
   );
 }
-
 function SiteModal({ mode, site, onSubmit, onClose }) {
   const [formData, setFormData] = useState({
     name: site?.name || '',
