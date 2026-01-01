@@ -488,7 +488,7 @@ export default function ParaglidingSitesApp() {
           <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MapPin className="w-8 h-8 text-white" />
-              <h1 className="text-2xl font-bold text-white">Paragliding Sites</h1>
+              <h1 className="text-2xl font-bold text-white">Freeflight Beta</h1>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -575,7 +575,7 @@ export default function ParaglidingSitesApp() {
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MapPin className="w-8 h-8 text-blue-600" />
-            <h1 className="text-2xl font-bold text-gray-800">Paragliding Sites</h1>
+            <h1 className="text-2xl font-bold text-gray-800">Freeflight Beta</h1>
           </div>
           <div className="flex items-center gap-3">
             <button
