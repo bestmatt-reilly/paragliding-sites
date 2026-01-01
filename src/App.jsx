@@ -904,6 +904,7 @@ function AuthModal({ mode, onAuth, onClose, onSwitchMode }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const handleSubmit = () => {
     if (!email || !password) {
@@ -912,6 +913,62 @@ function AuthModal({ mode, onAuth, onClose, onSwitchMode }) {
     }
     onAuth(email, password);
   };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      alert('Please enter your email address');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) throw error;
+      
+      alert('Password reset email sent! Check your inbox.');
+      setShowForgotPassword(false);
+    } catch (error) {
+      alert('Error sending reset email: ' + error.message);
+    }
+  };
+
+  if (showForgotPassword) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+          <h2 className="text-2xl font-bold mb-4">Reset Password</h2>
+          <p className="text-gray-600 mb-4">
+            Enter your email address and we'll send you a link to reset your password.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <button
+              onClick={handleForgotPassword}
+              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+            >
+              Send Reset Link
+            </button>
+          </div>
+          <button
+            onClick={() => setShowForgotPassword(false)}
+            className="mt-4 w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -955,6 +1012,16 @@ function AuthModal({ mode, onAuth, onClose, onSwitchMode }) {
               </button>
             </div>
           </div>
+          {mode === 'login' && (
+            <div className="text-right">
+              <button
+                onClick={() => setShowForgotPassword(true)}
+                className="text-sm text-blue-600 hover:text-blue-700"
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
           <button
             onClick={handleSubmit}
             className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
