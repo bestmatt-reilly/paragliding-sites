@@ -125,7 +125,7 @@ export default function ParaglidingSitesApp() {
   };
 
   const toggleFavorite = async (e, siteId) => {
-    e.stopPropagation(); // Prevent card from expanding when clicking heart
+    e.stopPropagation();
     
     if (!user) {
       alert('Please log in to favorite sites');
@@ -467,6 +467,7 @@ export default function ParaglidingSitesApp() {
     filteredSites = filteredSites.filter(s => favorites.includes(s.id));
   }
 
+  // Show admin panel if requested
   if (showAdminPanel && isAdmin) {
     return <AdminPanel 
       pendingSites={pendingSites}
@@ -479,6 +480,95 @@ export default function ParaglidingSitesApp() {
     />;
   }
 
+  // Show landing page if not logged in
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 via-sky-500 to-cyan-400">
+        <header className="bg-white bg-opacity-10 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-8 h-8 text-white" />
+              <h1 className="text-2xl font-bold text-white">Paragliding Sites</h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => { setShowAuthModal(true); setAuthMode('login'); }}
+                className="px-6 py-2 bg-white text-blue-600 rounded-lg hover:bg-gray-100 font-medium transition-colors"
+              >
+                Login
+              </button>
+              <button
+                onClick={() => { setShowAuthModal(true); setAuthMode('signup'); }}
+                className="px-6 py-2 bg-blue-700 text-white rounded-lg hover:bg-blue-800 font-medium transition-colors"
+              >
+                Sign Up
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto px-4 py-20 text-center">
+          <div className="mb-12">
+            <h2 className="text-5xl md:text-6xl font-bold text-white mb-6">
+              Discover Paragliding Sites<br />Around the World
+            </h2>
+            <p className="text-xl md:text-2xl text-white text-opacity-90 mb-8 max-w-3xl mx-auto">
+              Access a comprehensive database of paragliding locations, share your favorite spots, and connect with the global paragliding community.
+            </p>
+            <button
+              onClick={() => { setShowAuthModal(true); setAuthMode('signup'); }}
+              className="px-8 py-4 bg-white text-blue-600 rounded-lg hover:bg-gray-100 font-bold text-lg transition-all transform hover:scale-105 shadow-xl"
+            >
+              Get Started - It's Free
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-20 max-w-5xl mx-auto">
+            <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-8 text-white">
+              <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MapPin className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Browse Sites</h3>
+              <p className="text-white text-opacity-90">
+                Explore paragliding locations worldwide with detailed information and user reviews.
+              </p>
+            </div>
+
+            <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-8 text-white">
+              <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Heart className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Save Favorites</h3>
+              <p className="text-white text-opacity-90">
+                Create your personal collection of favorite flying sites for quick access.
+              </p>
+            </div>
+
+            <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-8 text-white">
+              <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Plus className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold mb-3">Contribute</h3>
+              <p className="text-white text-opacity-90">
+                Share new locations and help keep site information accurate and up-to-date.
+              </p>
+            </div>
+          </div>
+        </main>
+
+        {showAuthModal && (
+          <AuthModal
+            mode={authMode}
+            onAuth={authMode === 'login' ? handleLogin : handleSignUp}
+            onClose={() => setShowAuthModal(false)}
+            onSwitchMode={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Main app view for logged-in users
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 to-blue-100">
       <header className="bg-white shadow-md">
@@ -488,15 +578,13 @@ export default function ParaglidingSitesApp() {
             <h1 className="text-2xl font-bold text-gray-800">Paragliding Sites</h1>
           </div>
           <div className="flex items-center gap-3">
-            {user && (
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="w-4 h-4" />
-                Add Site
-              </button>
-            )}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add Site
+            </button>
             {isAdmin && (
               <button
                 onClick={() => setShowAdminPanel(true)}
@@ -506,23 +594,13 @@ export default function ParaglidingSitesApp() {
                 Admin ({pendingSites.length + editRequests.length})
               </button>
             )}
-            {user ? (
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-              >
-                <LogOut className="w-4 h-4" />
-                Logout
-              </button>
-            ) : (
-              <button
-                onClick={() => { setShowAuthModal(true); setAuthMode('login'); }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                <User className="w-4 h-4" />
-                Login
-              </button>
-            )}
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
           </div>
         </div>
       </header>
@@ -534,19 +612,17 @@ export default function ParaglidingSitesApp() {
               <Filter className="w-5 h-5 text-gray-600" />
               <h2 className="text-lg font-semibold">Filter Sites</h2>
             </div>
-            {user && (
-              <button
-                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                  showFavoritesOnly 
-                    ? 'bg-red-100 text-red-700 hover:bg-red-200' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <Heart className={`w-4 h-4 ${showFavoritesOnly ? 'fill-current' : ''}`} />
-                {showFavoritesOnly ? 'Show All' : 'Favorites Only'}
-              </button>
-            )}
+            <button
+              onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                showFavoritesOnly 
+                  ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Heart className={`w-4 h-4 ${showFavoritesOnly ? 'fill-current' : ''}`} />
+              {showFavoritesOnly ? 'Show All' : 'Favorites Only'}
+            </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -600,7 +676,6 @@ export default function ParaglidingSitesApp() {
                   key={site.id} 
                   className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow"
                 >
-                  {/* Collapsed View - Always Visible */}
                   <div 
                     onClick={() => toggleExpanded(site.id)}
                     className="p-6 cursor-pointer"
@@ -636,7 +711,6 @@ export default function ParaglidingSitesApp() {
                     </div>
                   </div>
 
-                  {/* Expanded View - Shows when clicked */}
                   {isExpanded && (
                     <div className="px-6 pb-6 border-t border-gray-200 pt-4">
                       {site.info && (
@@ -681,7 +755,7 @@ export default function ParaglidingSitesApp() {
           <div className="text-center py-12 text-gray-500">
             {showFavoritesOnly 
               ? 'No favorites yet. Click the heart icon on sites to save them!' 
-              : 'No sites found. ' + (user ? 'Be the first to add one!' : 'Log in to add a site!')
+              : 'No sites found. Be the first to add one!'
             }
           </div>
         )}
