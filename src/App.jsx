@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Plus, Filter, X, LogOut, User, Shield, Edit } from 'lucide-react';
+import { MapPin, Plus, Filter, X, LogOut, User, Shield, Edit, FileEdit } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 export default function ParaglidingSitesApp() {
@@ -7,12 +7,15 @@ export default function ParaglidingSitesApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [sites, setSites] = useState([]);
   const [pendingSites, setPendingSites] = useState([]);
+  const [editRequests, setEditRequests] = useState([]);
   const [filterCountry, setFilterCountry] = useState('');
   const [filterState, setFilterState] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showEditRequestModal, setShowEditRequestModal] = useState(false);
   const [editingSite, setEditingSite] = useState(null);
+  const [requestingEditSite, setRequestingEditSite] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [authMode, setAuthMode] = useState('login');
@@ -29,6 +32,7 @@ export default function ParaglidingSitesApp() {
       } else {
         setIsAdmin(false);
         setPendingSites([]);
+        setEditRequests([]);
       }
     });
 
@@ -40,6 +44,7 @@ export default function ParaglidingSitesApp() {
   useEffect(() => {
     if (isAdmin) {
       loadPendingSites();
+      loadEditRequests();
     }
   }, [isAdmin]);
 
@@ -95,7 +100,6 @@ export default function ParaglidingSitesApp() {
 
   const loadPendingSites = async () => {
     try {
-      console.log('Loading pending sites...');
       const { data, error } = await supabase
         .from('sites')
         .select('*')
@@ -107,10 +111,35 @@ export default function ParaglidingSitesApp() {
         return;
       }
       
-      console.log('Pending sites loaded:', data);
       setPendingSites(data || []);
     } catch (error) {
       console.error('Error in loadPendingSites:', error);
+    }
+  };
+
+  const loadEditRequests = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('edit_requests')
+        .select(`
+          *,
+          sites (
+            name,
+            country,
+            state,
+            info
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error loading edit requests:', error);
+        return;
+      }
+      
+      setEditRequests(data || []);
+    } catch (error) {
+      console.error('Error in loadEditRequests:', error);
     }
   };
 
@@ -207,16 +236,94 @@ export default function ParaglidingSitesApp() {
     }
   };
 
+  const submitEditRequest = async (siteId, proposedData) => {
+    if (!user) {
+      alert('Please log in to request edits');
+      setShowAuthModal(true);
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('edit_requests')
+        .insert([{
+          site_id: siteId,
+          user_id: user.id,
+          proposed_name: proposedData.name,
+          proposed_country: proposedData.country,
+          proposed_state: proposedData.state,
+          proposed_info: proposedData.info
+        }]);
+      
+      if (error) throw error;
+      
+      alert('Edit request submitted for admin review!');
+      setShowEditRequestModal(false);
+      setRequestingEditSite(null);
+    } catch (error) {
+      console.error('Error submitting edit request:', error);
+      alert('Error submitting edit request: ' + error.message);
+    }
+  };
+
+  const approveEditRequest = async (requestId, siteId, proposedData) => {
+    try {
+      // Update the site
+      const { error: updateError } = await supabase
+        .from('sites')
+        .update({
+          name: proposedData.proposed_name,
+          country: proposedData.proposed_country,
+          state: proposedData.proposed_state,
+          info: proposedData.proposed_info
+        })
+        .eq('id', siteId);
+      
+      if (updateError) throw updateError;
+
+      // Delete the edit request
+      const { error: deleteError } = await supabase
+        .from('edit_requests')
+        .delete()
+        .eq('id', requestId);
+      
+      if (deleteError) throw deleteError;
+
+      setEditRequests(prev => prev.filter(r => r.id !== requestId));
+      loadSites(); // Reload sites to show updated data
+      alert('Edit request approved and applied!');
+    } catch (error) {
+      console.error('Error approving edit request:', error);
+      alert('Error approving edit request: ' + error.message);
+    }
+  };
+
+  const rejectEditRequest = async (requestId) => {
+    if (!confirm('Are you sure you want to reject this edit request?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('edit_requests')
+        .delete()
+        .eq('id', requestId);
+      
+      if (error) throw error;
+      
+      setEditRequests(prev => prev.filter(r => r.id !== requestId));
+      alert('Edit request rejected.');
+    } catch (error) {
+      console.error('Error rejecting edit request:', error);
+      alert('Error rejecting edit request: ' + error.message);
+    }
+  };
+
   const approveSite = async (siteId) => {
-    console.log('Approving site:', siteId);
     try {
       const { data, error } = await supabase
         .from('sites')
         .update({ is_approved: true })
         .eq('id', siteId)
         .select();
-      
-      console.log('Approve result:', { data, error });
       
       if (error) throw error;
       
@@ -272,6 +379,11 @@ export default function ParaglidingSitesApp() {
     setShowEditModal(true);
   };
 
+  const handleRequestEditClick = (site) => {
+    setRequestingEditSite(site);
+    setShowEditRequestModal(true);
+  };
+
   const countries = [...new Set(sites.map(s => s.country))].sort();
   const states = filterCountry
     ? [...new Set(sites.filter(s => s.country === filterCountry).map(s => s.state))].sort()
@@ -285,8 +397,11 @@ export default function ParaglidingSitesApp() {
   if (showAdminPanel && isAdmin) {
     return <AdminPanel 
       pendingSites={pendingSites}
+      editRequests={editRequests}
       onApprove={approveSite}
       onReject={rejectSite}
+      onApproveEdit={approveEditRequest}
+      onRejectEdit={rejectEditRequest}
       onBack={() => setShowAdminPanel(false)}
     />;
   }
@@ -315,7 +430,7 @@ export default function ParaglidingSitesApp() {
                 className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
               >
                 <Shield className="w-4 h-4" />
-                Admin ({pendingSites.length})
+                Admin ({pendingSites.length + editRequests.length})
               </button>
             )}
             {user ? (
@@ -400,7 +515,7 @@ export default function ParaglidingSitesApp() {
                 <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded max-h-32 overflow-y-auto mb-3">
                   {site.info || 'No additional information provided.'}
                 </div>
-                {isAdmin && (
+                {isAdmin ? (
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleEditClick(site)}
@@ -416,6 +531,14 @@ export default function ParaglidingSitesApp() {
                       Delete
                     </button>
                   </div>
+                ) : user && (
+                  <button
+                    onClick={() => handleRequestEditClick(site)}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700"
+                  >
+                    <FileEdit className="w-4 h-4" />
+                    Request Edit
+                  </button>
                 )}
               </div>
             ))}
@@ -449,6 +572,18 @@ export default function ParaglidingSitesApp() {
         />
       )}
 
+      {showEditRequestModal && requestingEditSite && (
+        <SiteModal
+          mode="request"
+          site={requestingEditSite}
+          onSubmit={(data) => submitEditRequest(requestingEditSite.id, data)}
+          onClose={() => {
+            setShowEditRequestModal(false);
+            setRequestingEditSite(null);
+          }}
+        />
+      )}
+
       {showAuthModal && (
         <AuthModal
           mode={authMode}
@@ -477,13 +612,23 @@ function SiteModal({ mode, site, onSubmit, onClose }) {
     onSubmit(formData);
   };
 
+  const getTitle = () => {
+    if (mode === 'add') return 'Add New Paragliding Site';
+    if (mode === 'edit') return 'Edit Paragliding Site';
+    return 'Request Edit for Site';
+  };
+
+  const getButtonText = () => {
+    if (mode === 'add') return 'Add Site';
+    if (mode === 'edit') return 'Update Site';
+    return 'Submit Edit Request';
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">
-            {mode === 'add' ? 'Add New Paragliding Site' : 'Edit Paragliding Site'}
-          </h2>
+          <h2 className="text-2xl font-bold">{getTitle()}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X className="w-6 h-6" />
           </button>
@@ -532,7 +677,7 @@ function SiteModal({ mode, site, onSubmit, onClose }) {
               onClick={handleSubmit}
               className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
             >
-              {mode === 'add' ? 'Add Site' : 'Update Site'}
+              {getButtonText()}
             </button>
             <button
               onClick={onClose}
@@ -608,7 +753,9 @@ function AuthModal({ mode, onAuth, onClose, onSwitchMode }) {
   );
 }
 
-function AdminPanel({ pendingSites, onApprove, onReject, onBack }) {
+function AdminPanel({ pendingSites, editRequests, onApprove, onReject, onApproveEdit, onRejectEdit, onBack }) {
+  const [activeTab, setActiveTab] = useState('sites');
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 to-blue-100 p-8">
       <div className="max-w-4xl mx-auto">
@@ -616,7 +763,7 @@ function AdminPanel({ pendingSites, onApprove, onReject, onBack }) {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold flex items-center gap-2">
               <Shield className="w-6 h-6 text-purple-600" />
-              Admin Panel - Pending Submissions
+              Admin Panel
             </h2>
             <button
               onClick={onBack}
@@ -625,37 +772,118 @@ function AdminPanel({ pendingSites, onApprove, onReject, onBack }) {
               Back to Sites
             </button>
           </div>
-          
-          {pendingSites.length === 0 ? (
-            <p className="text-center text-gray-500 py-8">No pending submissions</p>
-          ) : (
-            <div className="space-y-4">
-              {pendingSites.map(site => (
-                <div key={site.id} className="border border-gray-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-2">{site.name}</h3>
-                  <p className="text-sm text-gray-600 mb-2">
-                    <strong>Location:</strong> {site.state}, {site.country}
-                  </p>
-                  <div className="bg-gray-50 p-3 rounded mb-3 max-h-32 overflow-y-auto text-sm">
-                    {site.info || 'No additional information provided.'}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onApprove(site.id)}
-                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => onReject(site.id)}
-                      className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                    >
-                      Reject
-                    </button>
-                  </div>
+
+          {/* Tabs */}
+          <div className="flex gap-2 mb-6 border-b">
+            <button
+              onClick={() => setActiveTab('sites')}
+              className={`px-4 py-2 font-medium ${
+                activeTab === 'sites'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Pending Sites ({pendingSites.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('edits')}
+              className={`px-4 py-2 font-medium ${
+                activeTab === 'edits'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Edit Requests ({editRequests.length})
+            </button>
+          </div>
+
+          {/* Pending Sites Tab */}
+          {activeTab === 'sites' && (
+            <>
+              {pendingSites.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No pending site submissions</p>
+              ) : (
+                <div className="space-y-4">
+                  {pendingSites.map(site => (
+                    <div key={site.id} className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-2">{site.name}</h3>
+                      <p className="text-sm text-gray-600 mb-2">
+                        <strong>Location:</strong> {site.state}, {site.country}
+                      </p>
+                      <div className="bg-gray-50 p-3 rounded mb-3 max-h-32 overflow-y-auto text-sm">
+                        {site.info || 'No additional information provided.'}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onApprove(site.id)}
+                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => onReject(site.id)}
+                          className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
+          )}
+
+          {/* Edit Requests Tab */}
+          {activeTab === 'edits' && (
+            <>
+              {editRequests.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No pending edit requests</p>
+              ) : (
+                <div className="space-y-4">
+                  {editRequests.map(request => (
+                    <div key={request.id} className="border border-gray-200 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3">Edit Request</h3>
+                      
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        {/* Current Version */}
+                        <div className="bg-red-50 p-3 rounded">
+                          <h4 className="font-semibold text-sm text-red-800 mb-2">Current</h4>
+                          <p className="text-sm mb-1"><strong>Name:</strong> {request.sites?.name}</p>
+                          <p className="text-sm mb-1"><strong>Country:</strong> {request.sites?.country}</p>
+                          <p className="text-sm mb-1"><strong>State:</strong> {request.sites?.state}</p>
+                          <p className="text-sm"><strong>Info:</strong> {request.sites?.info || 'None'}</p>
+                        </div>
+
+                        {/* Proposed Version */}
+                        <div className="bg-green-50 p-3 rounded">
+                          <h4 className="font-semibold text-sm text-green-800 mb-2">Proposed</h4>
+                          <p className="text-sm mb-1"><strong>Name:</strong> {request.proposed_name}</p>
+                          <p className="text-sm mb-1"><strong>Country:</strong> {request.proposed_country}</p>
+                          <p className="text-sm mb-1"><strong>State:</strong> {request.proposed_state}</p>
+                          <p className="text-sm"><strong>Info:</strong> {request.proposed_info || 'None'}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onApproveEdit(request.id, request.site_id, request)}
+                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                        >
+                          Approve Edit
+                        </button>
+                        <button
+                          onClick={() => onRejectEdit(request.id)}
+                          className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                        >
+                          Reject Edit
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
