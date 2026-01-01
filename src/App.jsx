@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Plus, Filter, X, LogOut, User, Shield, Edit, FileEdit } from 'lucide-react';
+import { MapPin, Plus, Filter, X, LogOut, User, Shield, Edit, FileEdit, Heart } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 export default function ParaglidingSitesApp() {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [sites, setSites] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   const [pendingSites, setPendingSites] = useState([]);
   const [editRequests, setEditRequests] = useState([]);
   const [filterCountry, setFilterCountry] = useState('');
   const [filterState, setFilterState] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditRequestModal, setShowEditRequestModal] = useState(false);
@@ -29,10 +31,12 @@ export default function ParaglidingSitesApp() {
       setUser(session?.user || null);
       if (session?.user) {
         await checkIfAdmin(session.user.id);
+        loadFavorites(session.user.id);
       } else {
         setIsAdmin(false);
         setPendingSites([]);
         setEditRequests([]);
+        setFavorites([]);
       }
     });
 
@@ -48,11 +52,18 @@ export default function ParaglidingSitesApp() {
     }
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (user) {
+      loadFavorites(user.id);
+    }
+  }, [user]);
+
   const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     setUser(user);
     if (user) {
       await checkIfAdmin(user.id);
+      loadFavorites(user.id);
     }
   };
 
@@ -95,6 +106,53 @@ export default function ParaglidingSitesApp() {
       console.error('Error loading sites:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadFavorites = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('favorites')
+        .select('site_id')
+        .eq('user_id', userId);
+      
+      if (error) throw error;
+      setFavorites(data.map(f => f.site_id));
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    }
+  };
+
+  const toggleFavorite = async (siteId) => {
+    if (!user) {
+      alert('Please log in to favorite sites');
+      setShowAuthModal(true);
+      return;
+    }
+
+    const isFavorited = favorites.includes(siteId);
+
+    try {
+      if (isFavorited) {
+        const { error } = await supabase
+          .from('favorites')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('site_id', siteId);
+        
+        if (error) throw error;
+        setFavorites(prev => prev.filter(id => id !== siteId));
+      } else {
+        const { error } = await supabase
+          .from('favorites')
+          .insert([{ user_id: user.id, site_id: siteId }]);
+        
+        if (error) throw error;
+        setFavorites(prev => [...prev, siteId]);
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      alert('Error updating favorites');
     }
   };
 
@@ -250,9 +308,9 @@ export default function ParaglidingSitesApp() {
           site_id: siteId,
           user_id: user.id,
           proposed_name: proposedData.name,
-          proposed_country: proposedData.country,
-          proposed_state: proposedData.state,
-          proposed_info: proposedData.info
+          proposed_country: proposedData.country || '',
+          proposed_state: proposedData.state || '',
+          proposed_info: proposedData.info || ''
         }]);
       
       if (error) throw error;
@@ -268,7 +326,6 @@ export default function ParaglidingSitesApp() {
 
   const approveEditRequest = async (requestId, siteId, proposedData) => {
     try {
-      // Update the site
       const { error: updateError } = await supabase
         .from('sites')
         .update({
@@ -281,7 +338,6 @@ export default function ParaglidingSitesApp() {
       
       if (updateError) throw updateError;
 
-      // Delete the edit request
       const { error: deleteError } = await supabase
         .from('edit_requests')
         .delete()
@@ -290,7 +346,7 @@ export default function ParaglidingSitesApp() {
       if (deleteError) throw deleteError;
 
       setEditRequests(prev => prev.filter(r => r.id !== requestId));
-      loadSites(); // Reload sites to show updated data
+      loadSites();
       alert('Edit request approved and applied!');
     } catch (error) {
       console.error('Error approving edit request:', error);
@@ -344,8 +400,7 @@ export default function ParaglidingSitesApp() {
         .from('sites')
         .delete()
         .eq('id', siteId);
-      
-      if (error) throw error;
+        if (error) throw error;
       
       setPendingSites(prev => prev.filter(s => s.id !== siteId));
       alert('Site rejected and deleted.');
@@ -384,15 +439,19 @@ export default function ParaglidingSitesApp() {
     setShowEditRequestModal(true);
   };
 
-  const countries = [...new Set(sites.map(s => s.country))].sort();
+  const countries = [...new Set(sites.map(s => s.country).filter(Boolean))].sort();
   const states = filterCountry
-    ? [...new Set(sites.filter(s => s.country === filterCountry).map(s => s.state))].sort()
+    ? [...new Set(sites.filter(s => s.country === filterCountry).map(s => s.state).filter(Boolean))].sort()
     : [];
 
-  const filteredSites = sites
+  let filteredSites = sites
     .filter(s => !filterCountry || s.country === filterCountry)
     .filter(s => !filterState || s.state === filterState)
     .filter(s => !searchTerm || s.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  if (showFavoritesOnly) {
+    filteredSites = filteredSites.filter(s => favorites.includes(s.id));
+  }
 
   if (showAdminPanel && isAdmin) {
     return <AdminPanel 
@@ -456,9 +515,24 @@ export default function ParaglidingSitesApp() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Filter className="w-5 h-5 text-gray-600" />
-            <h2 className="text-lg font-semibold">Filter Sites</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Filter className="w-5 h-5 text-gray-600" />
+              <h2 className="text-lg font-semibold">Filter Sites</h2>
+            </div>
+            {user && (
+              <button
+                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  showFavoritesOnly 
+                    ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Heart className={`w-4 h-4 ${showFavoritesOnly ? 'fill-current' : ''}`} />
+                {showFavoritesOnly ? 'Show All' : 'Favorites Only'}
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -507,14 +581,28 @@ export default function ParaglidingSitesApp() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSites.map(site => (
               <div key={site.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-                <h3 className="text-xl font-semibold text-gray-800 mb-3">{site.name}</h3>
+                <div className="flex items-start justify-between mb-3">
+                  <h3 className="text-xl font-semibold text-gray-800 flex-1">{site.name}</h3>
+                  <button
+                    onClick={() => toggleFavorite(site.id)}
+                    className={`ml-2 ${
+                      favorites.includes(site.id) 
+                        ? 'text-red-500' 
+                        : 'text-gray-400 hover:text-red-500'
+                    } transition-colors`}
+                  >
+                    <Heart className={`w-5 h-5 ${favorites.includes(site.id) ? 'fill-current' : ''}`} />
+                  </button>
+                </div>
                 <div className="text-sm text-gray-600 mb-3">
-                  <p><strong>Country:</strong> {site.country}</p>
-                  <p><strong>State:</strong> {site.state}</p>
+                  {site.country && <p><strong>Country:</strong> {site.country}</p>}
+                  {site.state && <p><strong>State:</strong> {site.state}</p>}
                 </div>
-                <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded max-h-32 overflow-y-auto mb-3">
-                  {site.info || 'No additional information provided.'}
-                </div>
+                {site.info && (
+                  <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded max-h-32 overflow-y-auto mb-3">
+                    {site.info}
+                  </div>
+                )}
                 {isAdmin ? (
                   <div className="flex gap-2">
                     <button
@@ -547,7 +635,10 @@ export default function ParaglidingSitesApp() {
 
         {!loading && filteredSites.length === 0 && (
           <div className="text-center py-12 text-gray-500">
-            No sites found. {user ? 'Be the first to add one!' : 'Log in to add a site!'}
+            {showFavoritesOnly 
+              ? 'No favorites yet. Click the heart icon on sites to save them!' 
+              : 'No sites found. ' + (user ? 'Be the first to add one!' : 'Log in to add a site!')
+            }
           </div>
         )}
       </main>
@@ -605,8 +696,8 @@ function SiteModal({ mode, site, onSubmit, onClose }) {
   });
 
   const handleSubmit = () => {
-    if (!formData.name || !formData.country || !formData.state) {
-      alert('Please fill in all required fields');
+    if (!formData.name) {
+      alert('Site name is required');
       return;
     }
     onSubmit(formData);
@@ -645,7 +736,7 @@ function SiteModal({ mode, site, onSubmit, onClose }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Country *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
             <input
               type="text"
               value={formData.country}
@@ -654,7 +745,7 @@ function SiteModal({ mode, site, onSubmit, onClose }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">State/Region *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">State/Region</label>
             <input
               type="text"
               value={formData.state}
@@ -773,7 +864,6 @@ function AdminPanel({ pendingSites, editRequests, onApprove, onReject, onApprove
             </button>
           </div>
 
-          {/* Tabs */}
           <div className="flex gap-2 mb-6 border-b">
             <button
               onClick={() => setActiveTab('sites')}
@@ -797,7 +887,6 @@ function AdminPanel({ pendingSites, editRequests, onApprove, onReject, onApprove
             </button>
           </div>
 
-          {/* Pending Sites Tab */}
           {activeTab === 'sites' && (
             <>
               {pendingSites.length === 0 ? (
@@ -807,12 +896,16 @@ function AdminPanel({ pendingSites, editRequests, onApprove, onReject, onApprove
                   {pendingSites.map(site => (
                     <div key={site.id} className="border border-gray-200 rounded-lg p-4">
                       <h3 className="text-lg font-semibold mb-2">{site.name}</h3>
-                      <p className="text-sm text-gray-600 mb-2">
-                        <strong>Location:</strong> {site.state}, {site.country}
-                      </p>
-                      <div className="bg-gray-50 p-3 rounded mb-3 max-h-32 overflow-y-auto text-sm">
-                        {site.info || 'No additional information provided.'}
-                      </div>
+                      {site.country && site.state && (
+                        <p className="text-sm text-gray-600 mb-2">
+                          <strong>Location:</strong> {site.state}, {site.country}
+                        </p>
+                      )}
+                      {site.info && (
+                        <div className="bg-gray-50 p-3 rounded mb-3 max-h-32 overflow-y-auto text-sm">
+                          {site.info}
+                        </div>
+                      )}
                       <div className="flex gap-2">
                         <button
                           onClick={() => onApprove(site.id)}
@@ -834,7 +927,6 @@ function AdminPanel({ pendingSites, editRequests, onApprove, onReject, onApprove
             </>
           )}
 
-          {/* Edit Requests Tab */}
           {activeTab === 'edits' && (
             <>
               {editRequests.length === 0 ? (
@@ -846,21 +938,19 @@ function AdminPanel({ pendingSites, editRequests, onApprove, onReject, onApprove
                       <h3 className="text-lg font-semibold mb-3">Edit Request</h3>
                       
                       <div className="grid grid-cols-2 gap-4 mb-4">
-                        {/* Current Version */}
                         <div className="bg-red-50 p-3 rounded">
                           <h4 className="font-semibold text-sm text-red-800 mb-2">Current</h4>
                           <p className="text-sm mb-1"><strong>Name:</strong> {request.sites?.name}</p>
-                          <p className="text-sm mb-1"><strong>Country:</strong> {request.sites?.country}</p>
-                          <p className="text-sm mb-1"><strong>State:</strong> {request.sites?.state}</p>
+                          <p className="text-sm mb-1"><strong>Country:</strong> {request.sites?.country || 'None'}</p>
+                          <p className="text-sm mb-1"><strong>State:</strong> {request.sites?.state || 'None'}</p>
                           <p className="text-sm"><strong>Info:</strong> {request.sites?.info || 'None'}</p>
                         </div>
 
-                        {/* Proposed Version */}
                         <div className="bg-green-50 p-3 rounded">
                           <h4 className="font-semibold text-sm text-green-800 mb-2">Proposed</h4>
                           <p className="text-sm mb-1"><strong>Name:</strong> {request.proposed_name}</p>
-                          <p className="text-sm mb-1"><strong>Country:</strong> {request.proposed_country}</p>
-                          <p className="text-sm mb-1"><strong>State:</strong> {request.proposed_state}</p>
+                          <p className="text-sm mb-1"><strong>Country:</strong> {request.proposed_country || 'None'}</p>
+                          <p className="text-sm mb-1"><strong>State:</strong> {request.proposed_state || 'None'}</p>
                           <p className="text-sm"><strong>Info:</strong> {request.proposed_info || 'None'}</p>
                         </div>
                       </div>
